@@ -492,8 +492,24 @@ void CControls::AvoidFreeze(int Dummy)
 	const int PredictionTicks = 20; // Predict 20 ticks ahead (approx 0.4 seconds)
 
 	auto IsFrozen = [&](vec2 Pos) -> bool {
-		int TileIndex = Collision()->GetCollisionAt(Pos.x, Pos.y);
-		return TileIndex == TILE_FREEZE || TileIndex == TILE_DFREEZE || TileIndex == TILE_LFREEZE;
+		// Check center and corners of the tee (roughly 28 units size)
+		const float Size = 28.0f;
+		vec2 Offsets[] = {
+			vec2(0, 0),
+			vec2(-Size / 2, -Size / 2),
+			vec2(Size / 2, -Size / 2),
+			vec2(-Size / 2, Size / 2),
+			vec2(Size / 2, Size / 2)
+		};
+
+		for(auto Off : Offsets)
+		{
+			vec2 P = Pos + Off;
+			int TileIndex = Collision()->GetTile(round_to_int(P.x), round_to_int(P.y));
+			if(TileIndex == TILE_FREEZE || TileIndex == TILE_DFREEZE || TileIndex == TILE_LFREEZE)
+				return true;
+		}
+		return false;
 	};
 
 	// Helper to simulate a path with specific input
