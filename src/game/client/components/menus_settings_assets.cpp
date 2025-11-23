@@ -32,7 +32,8 @@ enum
 	ASSETS_TAB_PARTICLES = 3,
 	ASSETS_TAB_HUD = 4,
 	ASSETS_TAB_EXTRAS = 5,
-	NUMBER_OF_ASSETS_TABS = 6,
+	ASSETS_TAB_FUJIX = 6,
+	NUMBER_OF_ASSETS_TABS = 7,
 };
 
 void CMenus::LoadEntities(SCustomEntities *pEntitiesItem, void *pUser)
@@ -359,7 +360,8 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		Localize("Emoticons"),
 		Localize("Particles"),
 		Localize("HUD"),
-		Localize("Extras")};
+		Localize("Extras"),
+		"FUJIX"};
 
 	for(int Tab = ASSETS_TAB_ENTITIES; Tab < NUMBER_OF_ASSETS_TABS; ++Tab)
 	{
@@ -370,6 +372,18 @@ void CMenus::RenderSettingsCustom(CUIRect MainView)
 		{
 			s_CurCustomTab = Tab;
 		}
+	}
+
+	if(s_CurCustomTab == ASSETS_TAB_FUJIX)
+	{
+		CUIRect Button;
+		MainView.HSplitTop(10.0f, nullptr, &MainView);
+		MainView.HSplitTop(20.0f, &Button, &MainView);
+		if(DoButton_CheckBox(&g_Config.m_ClFujixAvoidFreeze, "AVOID FREEZE", g_Config.m_ClFujixAvoidFreeze, &Button))
+		{
+			g_Config.m_ClFujixAvoidFreeze ^= 1;
+		}
+		return;
 	}
 
 	auto LoadStartTime = time_get_nanoseconds();

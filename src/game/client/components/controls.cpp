@@ -16,6 +16,7 @@
 #include <game/client/components/scoreboard.h>
 #include <game/client/gameclient.h>
 #include <game/collision.h>
+#include <game/mapitems.h>
 
 CControls::CControls()
 {
@@ -215,6 +216,9 @@ int CControls::SnapInput(int *pData)
 	bool Send = m_aLastData[g_Config.m_ClDummy].m_PlayerFlags != m_aInputData[g_Config.m_ClDummy].m_PlayerFlags;
 
 	m_aLastData[g_Config.m_ClDummy].m_PlayerFlags = m_aInputData[g_Config.m_ClDummy].m_PlayerFlags;
+
+	if(g_Config.m_ClFujixAvoidFreeze)
+		AvoidFreeze(g_Config.m_ClDummy);
 
 	// we freeze the input if chat or menu is activated
 	if(!(m_aInputData[g_Config.m_ClDummy].m_PlayerFlags & PLAYERFLAG_PLAYING))
@@ -465,4 +469,120 @@ float CControls::GetMaxMouseDistance() const
 	float DeadZone = g_Config.m_ClDyncam ? g_Config.m_ClDyncamDeadzone : g_Config.m_ClMouseDeadzone;
 	float MaxDistance = g_Config.m_ClDyncam ? g_Config.m_ClDyncamMaxDistance : g_Config.m_ClMouseMaxDistance;
 	return minimum((FollowFactor != 0 ? CameraMaxDistance / FollowFactor + DeadZone : MaxDistance), MaxDistance);
+}
+
+void CControls::AvoidFreeze(int Dummy)
+{
+	CGameClient *pClient = GameClient();
+	if(!pClient)
+		return;
+
+	CCharacterCore *pCore = &pClient->m_PredictedChar;
+	if(Dummy)
+		return; // Only for main player for now
+
+	// Use a copy of the core to simulate
+	CCharacterCore SimulationCore = *pCore;
+
+	// If we are already frozen, no point trying to avoid (unless it's deep freeze but that's complex)
+	if(SimulationCore.m_IsInFreeze)
+		return;
+
+	// Simulation parameters
+	const int PredictionTicks = 20; // Predict 20 ticks ahead (approx 0.4 seconds)
+
+	auto IsFrozen = [&](vec2 Pos) -> bool {
+		int TileIndex = Collision()->GetCollisionAt(Pos.x, Pos.y);
+		return TileIndex == TILE_FREEZE || TileIndex == TILE_DFREEZE || TileIndex == TILE_LFREEZE;
+	};
+
+	// Helper to simulate a path with specific input
+	auto SimulatePath = [&](int Direction, int Jump, int Hook) -> bool {
+		CCharacterCore Sim = SimulationCore;
+		Sim.m_Input.m_Direction = Direction;
+		Sim.m_Input.m_Jump = Jump;
+		Sim.m_Input.m_Hook = Hook;
+
+		// Apply input for a few ticks then reset to neutral or hold?
+		// For now, let's hold the input for the simulation duration
+
+		for(int i = 0; i < PredictionTicks; i++)
+		{
+			Sim.Tick(true);
+			if(IsFrozen(Sim.m_Pos))
+				return true; // Hit freeze
+		}
+		return false; // Safe
+	};
+
+	// Check if current path is dangerous
+	bool CurrentPathDangerous = false;
+	{
+		CCharacterCore Sim = SimulationCore;
+		// Use current input
+		Sim.m_Input.m_Direction = m_aInputData[Dummy].m_Direction;
+		Sim.m_Input.m_Jump = m_aInputData[Dummy].m_Jump;
+		Sim.m_Input.m_Hook = m_aInputData[Dummy].m_Hook;
+
+		for(int i = 0; i < PredictionTicks; i++)
+		{
+			Sim.Tick(true);
+			if(IsFrozen(Sim.m_Pos))
+			{
+				CurrentPathDangerous = true;
+				break;
+			}
+		}
+	}
+
+	if(!CurrentPathDangerous)
+		return; // We are safe
+
+	// If dangerous, search for a safe input
+	// Prioritize simple evasive maneuvers
+
+	struct SInputOption
+	{
+		int m_Dir;
+		int m_Jump;
+		int m_Hook;
+	};
+
+	// List of maneuvers to try
+	SInputOption Options[] = {
+		{0, 0, 0}, // Stop
+		{-1, 0, 0}, // Left
+		{1, 0, 0}, // Right
+		{0, 1, 0}, // Jump
+		{-1, 1, 0}, // Jump Left
+		{1, 1, 0}, // Jump Right
+		// Could add hook combinations too
+	};
+
+	for(const auto &Opt : Options)
+	{
+		if(!SimulatePath(Opt.m_Dir, Opt.m_Jump, Opt.m_Hook))
+		{
+			// Found a safe path! Apply it.
+			m_aInputData[Dummy].m_Direction = Opt.m_Dir;
+			m_aInputData[Dummy].m_Jump = Opt.m_Jump;
+			m_aInputData[Dummy].m_Hook = Opt.m_Hook;
+			return;
+		}
+	}
+
+	// If no safe path found, we might be doomed, or need more complex logic.
+	// Fallback to previous heuristic of reversing direction and jumping
+	if(m_aInputData[Dummy].m_Direction > 0)
+		m_aInputData[Dummy].m_Direction = -1;
+	else if(m_aInputData[Dummy].m_Direction < 0)
+		m_aInputData[Dummy].m_Direction = 1;
+	else
+	{
+		if(SimulationCore.m_Vel.x > 0)
+			m_aInputData[Dummy].m_Direction = -1;
+		else
+			m_aInputData[Dummy].m_Direction = 1;
+	}
+	m_aInputData[Dummy].m_Jump = 1;
 }

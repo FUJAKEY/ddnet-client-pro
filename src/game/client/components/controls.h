@@ -53,6 +53,7 @@ public:
 	int SnapInput(int *pData);
 	void ClampMousePos();
 	void ResetInput(int Dummy);
+	void AvoidFreeze(int Dummy);
 
 private:
 	static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
